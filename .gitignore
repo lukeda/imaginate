@@ -34,3 +34,4 @@ apps/api/data
 .turbo
 .env*
 .env.example
+data/
