@@ -33,4 +33,4 @@ dist-ssr
 apps/api/data
 .turbo
 .env*
-.env-example
+.env.example

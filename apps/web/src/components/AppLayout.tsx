@@ -1,12 +1,13 @@
 import { AppShell, Burger, Container, Group, NavLink, Title } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { IconHistory, IconSparkles } from "@tabler/icons-react";
+import { IconHistory, IconSparkles, IconStack2 } from "@tabler/icons-react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { ColorSchemeToggle } from "./ColorSchemeToggle";
 
 const links = [
   { to: "/", label: "Generate", icon: IconSparkles },
   { to: "/history", label: "History", icon: IconHistory },
+  { to: "/models", label: "Models", icon: IconStack2 },
 ];
 
 export function AppLayout() {

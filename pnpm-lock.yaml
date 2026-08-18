@@ -66,6 +66,9 @@ importers:
       '@tabler/icons-react':
         specifier: ^3.26.0
         version: 3.46.0(react@19.2.8)
+      decimal.js:
+        specifier: ^10.6.0
+        version: 10.6.0
       react:
         specifier: ^19.2.0
         version: 19.2.8
@@ -912,6 +915,9 @@ packages:
     peerDependenciesMeta:
       supports-color:
         optional: true
+
+  decimal.js@10.6.0:
+    resolution: {integrity: sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==}
 
   depd@2.0.0:
     resolution: {integrity: sha512-g7nH6P6dyDioJogAAGprGpCtVImJhpPk/roCzdb3fIh61/s/nPsfR6onyMwkCAR/OlC3yBC0lESvUoQEAssIrw==}
@@ -2071,6 +2077,8 @@ snapshots:
   debug@4.4.3:
     dependencies:
       ms: 2.1.3
+
+  decimal.js@10.6.0: {}
 
   depd@2.0.0: {}
 

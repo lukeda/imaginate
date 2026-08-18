@@ -22,6 +22,7 @@ const statusColor: Record<string, string> = {
   success: "green",
   error: "red",
   pending: "yellow",
+  cancelled: "gray",
 };
 
 export function HistoryPage() {

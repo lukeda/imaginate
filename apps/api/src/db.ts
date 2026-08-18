@@ -43,6 +43,10 @@ if (!hasColumn("generations", "cost_usd")) {
   db.exec(`ALTER TABLE generations ADD COLUMN cost_usd REAL`);
 }
 
+if (!hasColumn("generations", "completion_tokens")) {
+  db.exec(`ALTER TABLE generations ADD COLUMN completion_tokens INTEGER`);
+}
+
 type Row = Record<string, unknown>;
 
 function toItem(row: Row): HistoryItem {
@@ -57,6 +61,10 @@ function toItem(row: Row): HistoryItem {
     durationMs: row.duration_ms === null ? null : Number(row.duration_ms),
     createdAt: String(row.created_at),
     cost: row.cost_usd === null || row.cost_usd === undefined ? null : Number(row.cost_usd),
+    completionTokens:
+      row.completion_tokens === null || row.completion_tokens === undefined
+        ? null
+        : Number(row.completion_tokens),
   };
 }
 
@@ -80,18 +88,38 @@ export function createGeneration(input: {
 
 export function completeGeneration(
   id: number,
-  data: { images: GeneratedImage[]; text?: string; durationMs: number; cost?: number | null },
+  data: {
+    images: GeneratedImage[];
+    text?: string;
+    durationMs: number;
+    cost?: number | null;
+    completionTokens?: number | null;
+  },
 ): void {
   db.prepare(
     `UPDATE generations
-     SET status = 'success', output_image_count = ?, duration_ms = ?, text = ?, cost_usd = ?
+     SET status = 'success', output_image_count = ?, duration_ms = ?, text = ?, cost_usd = ?, completion_tokens = ?
      WHERE id = ?`,
-  ).run(data.images.length, data.durationMs, data.text ?? null, data.cost ?? null, id);
+  ).run(
+    data.images.length,
+    data.durationMs,
+    data.text ?? null,
+    data.cost ?? null,
+    data.completionTokens ?? null,
+    id,
+  );
 
   const insert = db.prepare(
     `INSERT INTO generation_images (generation_id, data_url) VALUES (?, ?)`,
   );
   for (const image of data.images) insert.run(id, image.dataUrl);
+}
+
+export function cancelGeneration(id: number, durationMs: number): void {
+  db.prepare(`UPDATE generations SET status = 'cancelled', duration_ms = ? WHERE id = ?`).run(
+    durationMs,
+    id,
+  );
 }
 
 export function failGeneration(id: number, error: string, durationMs: number): void {
@@ -117,4 +145,22 @@ export function getHistoryDetail(id: number): HistoryDetail | null {
     .all(id)
     .map((r) => ({ dataUrl: String((r as Row).data_url) }));
   return { ...toItem(row), text: (row.text as string | null) ?? null, images };
+}
+
+/** Average measured output tokens per image per model, from successful generations. */
+export function avgOutputTokensByModel(): Record<string, number> {
+  const rows = db
+    .prepare(
+      `SELECT model, AVG(completion_tokens / output_image_count) AS avg_tokens
+       FROM generations
+       WHERE status = 'success' AND completion_tokens IS NOT NULL AND output_image_count > 0
+       GROUP BY model`,
+    )
+    .all() as Row[];
+  const result: Record<string, number> = {};
+  for (const row of rows) {
+    const tokens = Number(row.avg_tokens);
+    if (Number.isFinite(tokens) && tokens > 0) result[String(row.model)] = Math.round(tokens);
+  }
+  return result;
 }

@@ -10,12 +10,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@imaginate/shared": "workspace:*",
     "@mantine/core": "^9.0.0",
     "@mantine/dropzone": "^9.0.0",
     "@mantine/hooks": "^9.0.0",
     "@mantine/notifications": "^9.0.0",
-    "@imaginate/shared": "workspace:*",
     "@tabler/icons-react": "^3.26.0",
+    "decimal.js": "^10.6.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.1.1"

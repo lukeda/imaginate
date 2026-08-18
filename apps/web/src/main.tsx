@@ -11,6 +11,7 @@ import "@mantine/notifications/styles.css";
 import { AppLayout } from "./components/AppLayout";
 import { GeneratePage } from "./pages/GeneratePage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { ModelsPage } from "./pages/ModelsPage";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -21,6 +22,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route element={<AppLayout />}>
             <Route path="/" element={<GeneratePage />} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/models" element={<ModelsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
