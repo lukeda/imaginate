@@ -125,6 +125,7 @@ export async function listImageModels(): Promise<ImageModel[]> {
 
     models.push({
       id: m.id,
+      source: "openrouter",
       name: m.name ?? m.id,
       description: m.description,
       maxInputImages,

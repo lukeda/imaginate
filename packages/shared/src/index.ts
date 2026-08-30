@@ -16,6 +16,8 @@ export interface ImageModelProvider {
 
 export interface ImageModel {
   id: string;
+  /** Which provider API this model is served through. */
+  source: "openrouter" | "fal";
   name: string;
   description?: string;
   /** Max number of input images the model accepts, when known. */

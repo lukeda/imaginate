@@ -24,6 +24,7 @@ import {
   Textarea,
   Title,
 } from "@mantine/core";
+import type { OptionsFilter } from "@mantine/core";
 import { Dropzone, IMAGE_MIME_TYPE, type FileWithPath } from "@mantine/dropzone";
 import { notifications } from "@mantine/notifications";
 import { IconAlertCircle, IconDownload, IconPhotoPlus, IconPlayerStop, IconX } from "@tabler/icons-react";
@@ -176,7 +177,25 @@ export function GeneratePage() {
     if (!tokenBasisEdited.current) setTokenBasis(basisDefault);
   }, [selected?.avgOutputTokens]);
 
-  const options = useMemo(() => models.map((m) => ({ value: m.id, label: m.name })), [models]);
+  const options = useMemo(
+    () => models.map((m) => ({ value: m.id, label: m.name })),
+    [models],
+  );
+
+  const modelFilter: OptionsFilter = ({ options: opts, search, limit }) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return opts.slice(0, limit);
+    const filtered = opts.filter((item) => {
+      if ("items" in item) return false;
+      const value = item.value.toLowerCase();
+      return (
+        item.label.toLowerCase().includes(q) ||
+        value.includes(q) ||
+        value.replace(/^fal\//, "").includes(q)
+      );
+    });
+    return filtered.slice(0, limit);
+  };
 
   const providerChoices = useMemo(
     () => (selected?.providers ?? []).map((p) => ({ value: p.slug, label: p.name || p.slug })),
@@ -304,7 +323,7 @@ export function GeneratePage() {
         <div>
           <Title order={2}>Generate an image</Title>
           <Text c="dimmed" size="sm">
-            Runs locally against your OpenRouter account.
+            Runs locally against your OpenRouter and fal.ai accounts.
           </Text>
         </div>
         {selected && (
@@ -346,6 +365,15 @@ export function GeneratePage() {
                 disabled={modelsLoading}
                 rightSection={modelsLoading ? <Loader size="xs" /> : undefined}
                 limit={100}
+                filter={modelFilter}
+                renderOption={({ option }) => (
+                  <Stack gap={0}>
+                    <Text size="sm">{option.label}</Text>
+                    <Text size="xs" c="dimmed" style={{ fontFamily: "monospace" }}>
+                      {option.value}
+                    </Text>
+                  </Stack>
+                )}
               />
 
               {selected && selected.providers.length > 0 && (
@@ -568,18 +596,19 @@ export function GeneratePage() {
 
               <Divider />
 
-              <Stack gap="sm">
-                <Group justify="space-between">
-                  <Text size="sm" fw={500}>
-                    Provider routing
-                  </Text>
-                  <Switch
-                    label="Allow fallbacks"
-                    checked={allowFallbacks}
-                    onChange={(e) => setAllowFallbacks(e.currentTarget.checked)}
-                    size="xs"
-                  />
-                </Group>
+              {selected && selected.providers.length > 0 && (
+                <Stack gap="sm">
+                  <Group justify="space-between">
+                    <Text size="sm" fw={500}>
+                      Provider routing
+                    </Text>
+                    <Switch
+                      label="Allow fallbacks"
+                      checked={allowFallbacks}
+                      onChange={(e) => setAllowFallbacks(e.currentTarget.checked)}
+                      size="xs"
+                    />
+                  </Group>
                 <Select
                   label="Mode"
                   data={[
@@ -619,6 +648,7 @@ export function GeneratePage() {
                   error={providerOptionsError}
                 />
               </Stack>
+              )}
 
               <Button
                 onClick={handleGenerate}

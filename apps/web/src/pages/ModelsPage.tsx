@@ -69,6 +69,8 @@ export function ModelsPage() {
           (m) =>
             m.name.toLowerCase().includes(q) ||
             m.description?.toLowerCase().includes(q) ||
+            m.id.toLowerCase().includes(q) ||
+            m.id.replace(/^fal\//, "").toLowerCase().includes(q) ||
             m.providers.some((p) => p.name.toLowerCase().includes(q)),
         )
       : [...models];
@@ -98,7 +100,7 @@ export function ModelsPage() {
       <div>
         <Title order={2}>Models</Title>
         <Text c="dimmed" size="sm">
-          Every image model OpenRouter exposes, with pricing from each provider.
+          Every image model OpenRouter and fal.ai expose, with pricing from each provider.
         </Text>
       </div>
 
@@ -157,8 +159,16 @@ export function ModelsPage() {
                     >
                       <Table.Td>
                         <Stack gap={2}>
-                          <Text fw={500} size="sm">
-                            {m.name}
+                          <Group gap={6} wrap="nowrap">
+                            <Text fw={500} size="sm" truncate>
+                              {m.name}
+                            </Text>
+                            <Badge variant="light" color={m.source === "fal" ? "orange" : "blue"} size="xs" tt="uppercase">
+                              {m.source}
+                            </Badge>
+                          </Group>
+                          <Text size="xs" c="dimmed" style={{ fontFamily: "monospace" }}>
+                            {m.id}
                           </Text>
                           {m.description && (
                             <Text size="xs" c="dimmed" lineClamp={1}>
@@ -209,7 +219,15 @@ export function ModelsPage() {
           <Stack gap="md">
             <Group justify="space-between" align="flex-start">
               <Stack gap={2}>
-                <Title order={4}>{selected.name}</Title>
+                <Group gap={6}>
+                  <Title order={4}>{selected.name}</Title>
+                  <Badge variant="light" color={selected.source === "fal" ? "orange" : "blue"} size="sm" tt="uppercase">
+                    {selected.source}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="dimmed" style={{ fontFamily: "monospace" }}>
+                  {selected.id}
+                </Text>
                 {selected.description && (
                   <Text size="sm" c="dimmed">
                     {selected.description}

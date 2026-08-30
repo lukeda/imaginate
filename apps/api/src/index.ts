@@ -1,8 +1,9 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import type { GenerateRequest, GenerateResponse } from "@imaginate/shared";
+import type { GenerateRequest, GenerateResponse, GeneratedImage } from "@imaginate/shared";
 import { listImageModels, generateImage, generateImageStream } from "./openrouter.js";
+import { listFalImageModels, generateFalImage } from "./fal.js";
 import {
   avgOutputTokensByModel,
   cancelGeneration,
@@ -20,11 +21,7 @@ app.use(express.json({ limit: "50mb" }));
 const message = (err: unknown) => (err instanceof Error ? err.message : "Unexpected error");
 
 const describeError = (err: unknown): string =>
-  err instanceof Error
-    ? err.message
-    : typeof err === "string" && err
-      ? err
-      : "Unexpected error";
+  err instanceof Error ? err.message : typeof err === "string" && err ? err : "Unexpected error";
 
 type RequestLike = {
   method: string;
@@ -65,12 +62,20 @@ app.use((req, res, next) => {
 });
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, hasKey: Boolean(process.env.OPENROUTER_API_KEY) });
+  res.json({
+    ok: true,
+    hasKey: Boolean(process.env.OPENROUTER_API_KEY),
+    hasFalKey: Boolean(process.env.FAL_API_KEY),
+  });
 });
 
 app.get("/api/models", async (req, res) => {
   try {
-    const models = await listImageModels();
+    const [openrouterModels, falModels] = await Promise.all([
+      listImageModels(),
+      listFalImageModels().catch(() => []),
+    ]);
+    const models = [...openrouterModels, ...falModels];
     const avgTokens = avgOutputTokensByModel();
     for (const m of models) m.avgOutputTokens = avgTokens[m.id] ?? null;
     res.json({ models });
@@ -98,6 +103,17 @@ function pickGenerateFields(body: GenerateRequest) {
   };
 }
 
+const isFalModel = (model: string) => model.startsWith("fal/");
+
+async function runGeneration(
+  body: GenerateRequest,
+  signal: AbortSignal,
+): Promise<{ images: GeneratedImage[]; cost: number | null; completionTokens: number | null }> {
+  const { images, ...rest } = pickGenerateFields(body);
+  const input = { ...rest, images, prompt: body.prompt, model: body.model };
+  return isFalModel(body.model) ? generateFalImage(input, signal) : generateImage(input, signal);
+}
+
 app.post("/api/generate", async (req, res) => {
   const body = req.body as GenerateRequest;
   if (!body?.model || typeof body.model !== "string") {
@@ -107,7 +123,7 @@ app.post("/api/generate", async (req, res) => {
     return res.status(400).json({ error: "A prompt is required." });
   }
 
-  const { images, ...rest } = pickGenerateFields(body);
+  const { images } = pickGenerateFields(body);
   const id = createGeneration({
     model: body.model,
     prompt: body.prompt,
@@ -121,10 +137,7 @@ app.post("/api/generate", async (req, res) => {
   });
 
   try {
-    const result = await generateImage(
-      { ...rest, images, prompt: body.prompt, model: body.model },
-      abort.signal,
-    );
+    const result = await runGeneration(body, abort.signal);
     const durationMs = Date.now() - startedAt;
     completeGeneration(id, { ...result, durationMs });
 
@@ -188,10 +201,7 @@ app.post("/api/generate/stream", async (req, res) => {
     const supportsStreaming = model?.supportsStreaming ?? false;
 
     if (!supportsStreaming) {
-      const result = await generateImage(
-        { ...rest, images, prompt: body.prompt, model: body.model },
-        abort.signal,
-      );
+      const result = await runGeneration(body, abort.signal);
       const durationMs = Date.now() - startedAt;
       completeGeneration(id, { ...result, durationMs });
       send("done", {
