@@ -116,7 +116,9 @@ app.post("/api/generate", async (req, res) => {
   const startedAt = Date.now();
 
   const abort = new AbortController();
-  req.on("close", () => abort.abort());
+  res.on("close", () => {
+    if (!res.writableEnded) abort.abort();
+  });
 
   try {
     const result = await generateImage(
@@ -170,14 +172,44 @@ app.post("/api/generate/stream", async (req, res) => {
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
   });
+  res.flushHeaders();
   const send = (event: string, data: object) => {
     res.write(`data: ${JSON.stringify({ type: event, ...data })}\n\n`);
   };
 
   const abort = new AbortController();
-  req.on("close", () => abort.abort());
+  res.on("close", () => {
+    if (!res.writableEnded) abort.abort();
+  });
 
   try {
+    const models = await listImageModels();
+    const model = models.find((m) => m.id === body.model);
+    const supportsStreaming = model?.supportsStreaming ?? false;
+
+    if (!supportsStreaming) {
+      const result = await generateImage(
+        { ...rest, images, prompt: body.prompt, model: body.model },
+        abort.signal,
+      );
+      const durationMs = Date.now() - startedAt;
+      completeGeneration(id, { ...result, durationMs });
+      send("done", {
+        result: {
+          id,
+          model: body.model,
+          prompt: body.prompt,
+          images: result.images,
+          createdAt: new Date().toISOString(),
+          durationMs,
+          cost: result.cost,
+          completionTokens: result.completionTokens,
+        },
+      });
+      res.end();
+      return;
+    }
+
     for await (const event of generateImageStream(
       { ...rest, images, prompt: body.prompt, model: body.model },
       { id, model: body.model, prompt: body.prompt },

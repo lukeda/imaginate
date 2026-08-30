@@ -257,64 +257,18 @@ export async function generateImage(input: GenerateInput, signal?: AbortSignal):
   };
 }
 
-interface StreamResult {
-  items: ImageDataItem[];
-  cost: number | null;
-  completionTokens: number | null;
-}
-
-async function readImageStream(body: ReadableStream<Uint8Array>): Promise<StreamResult> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const items: ImageDataItem[] = [];
-  let cost: number | null = null;
-  let completionTokens: number | null = null;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let newlineIndex: number;
-    while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, newlineIndex).trim();
-      buffer = buffer.slice(newlineIndex + 1);
-      if (!line.startsWith("data:")) continue;
-      const payload = line.slice(5).trim();
-      if (payload === "[DONE]") return { items, cost, completionTokens };
-      let event: {
-        type?: string;
-        b64_json?: string;
-        media_type?: string;
-        usage?: { cost?: number; completion_tokens?: number };
-        error?: { message?: string };
-      };
-      try {
-        event = JSON.parse(payload) as typeof event;
-      } catch {
-        continue;
-      }
-      if (event.type === "image_generation.partial_image") {
-        items.push({ b64_json: event.b64_json, media_type: event.media_type });
-      }
-      if (event.type === "image_generation.completed") {
-        items.push({ b64_json: event.b64_json, media_type: event.media_type });
-        if (event.usage?.cost != null) cost = event.usage.cost;
-        if (event.usage?.completion_tokens != null)
-          completionTokens = event.usage.completion_tokens;
-      }
-      if (event.type === "error" && event.error?.message) {
-        throw new Error(event.error.message);
-      }
-    }
-  }
-  return { items, cost, completionTokens };
+interface StreamEvent {
+  type?: string;
+  partial_image_index?: number;
+  b64_json?: string;
+  media_type?: string;
+  usage?: { cost?: number; completion_tokens?: number };
+  error?: { message?: string };
 }
 
 /**
- * Generates an image and yields streaming events. Terminates with a `done`
- * event carrying the final result, or an `error` event.
+ * Generates an image and yields streaming events as they arrive. Terminates
+ * with a `done` event carrying the final result, or an `error` event.
  */
 export async function* generateImageStream(
   input: GenerateInput,
@@ -336,25 +290,63 @@ export async function* generateImageStream(
     throw new Error(errBody.error?.message ?? `OpenRouter stream failed (${res.status})`);
   }
 
-  let images: GeneratedImage[] = [];
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const partials: GeneratedImage[] = [];
+  let finalImage: GeneratedImage | null = null;
   let cost: number | null = null;
   let completionTokens: number | null = null;
-  try {
-    const stream = await readImageStream(res.body);
-    cost = stream.cost;
-    completionTokens = stream.completionTokens;
-    for (const item of stream.items) {
-      const image = toImage(item);
-      if (!image) continue;
-      if (images.some((i) => i.dataUrl === image.dataUrl)) continue;
-      images.push(image);
-      yield { type: "partial_image", image, index: images.length - 1 };
+  let streamEnded = false;
+
+  while (!streamEnded) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let newlineIndex: number;
+    while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (payload === "[DONE]") {
+        streamEnded = true;
+        break;
+      }
+      let event: StreamEvent;
+      try {
+        event = JSON.parse(payload) as StreamEvent;
+      } catch {
+        continue;
+      }
+      if (event.type === "image_generation.partial_image") {
+        const image = toImage(event);
+        if (!image) continue;
+        partials.push(image);
+        yield {
+          type: "partial_image",
+          image,
+          index: event.partial_image_index ?? partials.length - 1,
+        };
+      } else if (event.type === "image_generation.completed") {
+        const image = toImage(event);
+        if (image) finalImage = image;
+        if (event.usage?.cost != null) cost = event.usage.cost;
+        if (event.usage?.completion_tokens != null)
+          completionTokens = event.usage.completion_tokens;
+      } else if (event.type === "error" && event.error?.message) {
+        yield { type: "error", message: event.error.message };
+        return;
+      }
     }
-  } catch (err) {
-    yield { type: "error", message: (err as Error).message };
-    return;
   }
 
+  const images = finalImage
+    ? [finalImage]
+    : partials.length > 0
+      ? [partials[partials.length - 1]]
+      : [];
   if (images.length === 0) {
     yield { type: "error", message: "Model returned no images." };
     return;
