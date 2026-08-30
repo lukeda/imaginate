@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Badge,
@@ -19,6 +19,7 @@ import { api } from "../api";
 import { estimatePerImageCost, formatCost, pricingLineLabel } from "../cost";
 
 const DEFAULT_TOKENS_PER_IMAGE = 2000;
+const PAGE_SIZE = 100;
 
 function basisFor(model: ImageModel): { tokensPerImage: number } {
   return { tokensPerImage: model.avgOutputTokens ?? DEFAULT_TOKENS_PER_IMAGE };
@@ -43,6 +44,72 @@ const CAPABILITY_LABELS: { key: keyof Pick<ImageModel, "supportsImageInput" | "s
   { key: "supportsStreaming", label: "Streaming", color: "indigo" },
 ];
 
+interface ModelRowProps {
+  model: ImageModel;
+  price: number | null;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}
+
+const ModelRow = memo(function ModelRow({ model, price, selected, onSelect }: ModelRowProps) {
+  return (
+    <Table.Tr
+      style={{ cursor: "pointer" }}
+      onClick={() => onSelect(model.id)}
+      bg={selected ? "var(--mantine-color-default-hover)" : undefined}
+    >
+      <Table.Td>
+        <Stack gap={2}>
+          <Group gap={6} wrap="nowrap">
+            <Text fw={500} size="sm" truncate>
+              {model.name}
+            </Text>
+            <Badge variant="light" color={model.source === "fal" ? "orange" : "blue"} size="xs" tt="uppercase">
+              {model.source}
+            </Badge>
+          </Group>
+          <Text size="xs" c="dimmed" style={{ fontFamily: "monospace" }}>
+            {model.id}
+          </Text>
+          {model.description && (
+            <Text size="xs" c="dimmed" lineClamp={1}>
+              {model.description}
+            </Text>
+          )}
+        </Stack>
+      </Table.Td>
+      <Table.Td>
+        <Group gap={4}>
+          {CAPABILITY_LABELS.filter((c) => model[c.key]).map((c) => (
+            <Badge key={c.key} variant="light" color={c.color} size="xs">
+              {c.label}
+            </Badge>
+          ))}
+          {model.maxN > 1 && (
+            <Badge variant="light" color="blue" size="xs">
+              {model.maxN} images
+            </Badge>
+          )}
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm">{model.providers.length}</Text>
+      </Table.Td>
+      <Table.Td>
+        {price === null ? (
+          <Text size="sm" c="dimmed">
+            —
+          </Text>
+        ) : (
+          <Badge variant="light" color="teal" size="sm">
+            {formatCost(price)}/image est.
+          </Badge>
+        )}
+      </Table.Td>
+    </Table.Tr>
+  );
+});
+
 export function ModelsPage() {
   const [models, setModels] = useState<ImageModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,24 +129,38 @@ export function ModelsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const derived = useMemo(() => {
+    const map = new Map<string, { haystack: string; price: number | null }>();
+    for (const m of models) {
+      const haystack = [
+        m.name,
+        m.description ?? "",
+        m.id,
+        m.id.replace(/^fal\//, ""),
+        ...m.providers.map((p) => p.name),
+      ]
+        .join(" ")
+        .toLowerCase();
+      map.set(m.id, { haystack, price: cheapestFor(m) });
+    }
+    return map;
+  }, [models]);
+
+  const deferredQuery = useDeferredValue(query);
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = deferredQuery.trim().toLowerCase();
     const list = q
-      ? models.filter(
-          (m) =>
-            m.name.toLowerCase().includes(q) ||
-            m.description?.toLowerCase().includes(q) ||
-            m.id.toLowerCase().includes(q) ||
-            m.id.replace(/^fal\//, "").toLowerCase().includes(q) ||
-            m.providers.some((p) => p.name.toLowerCase().includes(q)),
-        )
+      ? models.filter((m) => derived.get(m.id)?.haystack.includes(q))
       : [...models];
 
     list.sort((a, b) => {
+      const da = derived.get(a.id)!;
+      const db = derived.get(b.id)!;
       switch (sort) {
         case "price": {
-          const pa = cheapestFor(a) ?? Infinity;
-          const pb = cheapestFor(b) ?? Infinity;
+          const pa = da.price ?? Infinity;
+          const pb = db.price ?? Infinity;
           if (pa !== pb) return pa - pb;
           break;
         }
@@ -91,9 +172,14 @@ export function ModelsPage() {
       return a.name.localeCompare(b.name);
     });
     return list;
-  }, [models, query, sort]);
+  }, [models, deferredQuery, sort, derived]);
+
+  const visible = filtered.slice(0, PAGE_SIZE);
+  const truncated = filtered.length > PAGE_SIZE;
 
   const selected = useMemo(() => models.find((m) => m.id === selectedId) ?? null, [models, selectedId]);
+
+  const handleSelect = useCallback((id: string) => setSelectedId(id), []);
 
   return (
     <Stack gap="lg">
@@ -148,69 +234,23 @@ export function ModelsPage() {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {filtered.map((m) => {
-                  const price = cheapestFor(m);
-                  return (
-                    <Table.Tr
-                      key={m.id}
-                      style={{ cursor: "pointer" }}
-                      onClick={() => setSelectedId(m.id)}
-                      bg={selectedId === m.id ? "var(--mantine-color-default-hover)" : undefined}
-                    >
-                      <Table.Td>
-                        <Stack gap={2}>
-                          <Group gap={6} wrap="nowrap">
-                            <Text fw={500} size="sm" truncate>
-                              {m.name}
-                            </Text>
-                            <Badge variant="light" color={m.source === "fal" ? "orange" : "blue"} size="xs" tt="uppercase">
-                              {m.source}
-                            </Badge>
-                          </Group>
-                          <Text size="xs" c="dimmed" style={{ fontFamily: "monospace" }}>
-                            {m.id}
-                          </Text>
-                          {m.description && (
-                            <Text size="xs" c="dimmed" lineClamp={1}>
-                              {m.description}
-                            </Text>
-                          )}
-                        </Stack>
-                      </Table.Td>
-                      <Table.Td>
-                        <Group gap={4}>
-                          {CAPABILITY_LABELS.filter((c) => m[c.key]).map((c) => (
-                            <Badge key={c.key} variant="light" color={c.color} size="xs">
-                              {c.label}
-                            </Badge>
-                          ))}
-                          {m.maxN > 1 && (
-                            <Badge variant="light" color="blue" size="xs">
-                              {m.maxN} images
-                            </Badge>
-                          )}
-                        </Group>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">{m.providers.length}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        {price === null ? (
-                          <Text size="sm" c="dimmed">
-                            —
-                          </Text>
-                        ) : (
-                          <Badge variant="light" color="teal" size="sm">
-                            {formatCost(price)}/image est.
-                          </Badge>
-                        )}
-                      </Table.Td>
-                    </Table.Tr>
-                  );
-                })}
+                {visible.map((m) => (
+                  <ModelRow
+                    key={m.id}
+                    model={m}
+                    price={derived.get(m.id)?.price ?? null}
+                    selected={selectedId === m.id}
+                    onSelect={handleSelect}
+                  />
+                ))}
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+          {truncated && (
+            <Text size="xs" c="dimmed" p="sm">
+              Showing {visible.length} of {filtered.length} models — refine your search to narrow results.
+            </Text>
+          )}
         </Card>
       )}
 
