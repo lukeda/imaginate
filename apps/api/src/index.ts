@@ -75,7 +75,12 @@ app.get("/api/models", async (req, res) => {
       listImageModels(),
       listFalImageModels().catch(() => []),
     ]);
-    const models = [...openrouterModels, ...falModels];
+    const seen = new Set<string>();
+    const models = [...openrouterModels, ...falModels].filter((m) => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
     const avgTokens = avgOutputTokensByModel();
     for (const m of models) m.avgOutputTokens = avgTokens[m.id] ?? null;
     res.json({ models });

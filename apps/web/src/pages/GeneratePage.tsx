@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon,
   Alert,
@@ -24,6 +24,7 @@ import {
   Textarea,
   Title,
 } from "@mantine/core";
+import { useDebouncedCallback } from "@mantine/hooks";
 import type { OptionsFilter } from "@mantine/core";
 import { Dropzone, IMAGE_MIME_TYPE, type FileWithPath } from "@mantine/dropzone";
 import { notifications } from "@mantine/notifications";
@@ -43,6 +44,7 @@ import {
   pricingLineLabel,
   resolutionToMegapixels,
 } from "../cost";
+import { PromptTextarea } from "../components/PromptTextarea";
 
 const DEFAULT_MAX_IMAGES = 8;
 const DEFAULT_TOKENS_PER_IMAGE = 2000;
@@ -81,6 +83,7 @@ export function GeneratePage() {
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
 
+  const promptRef = useRef("");
   const [prompt, setPrompt] = useState("");
   const [images, setImages] = useState<InputImage[]>([]);
 
@@ -126,6 +129,15 @@ export function GeneratePage() {
     return () => window.clearInterval(timer);
   }, [loading]);
 
+  const syncPromptState = useDebouncedCallback((value: string) => setPrompt(value), 120);
+  const handlePromptChange = useCallback(
+    (value: string) => {
+      promptRef.current = value;
+      syncPromptState(value);
+    },
+    [syncPromptState],
+  );
+
   const selected = useMemo(() => models.find((m) => m.id === model) ?? null, [models, model]);
   const maxImages = selected?.maxInputImages ?? DEFAULT_MAX_IMAGES;
   const canAttach = selected?.supportsImageInput ?? false;
@@ -157,6 +169,15 @@ export function GeneratePage() {
     return costs.length > 0 ? Math.min(...costs) : null;
   }, [selected, basis]);
 
+  const providerCosts = useMemo(() => {
+    if (!selected) return null;
+    const costs = new Map<string, number | null>();
+    for (const provider of selected.providers) {
+      costs.set(provider.slug, estimatePerImageCost(provider.pricing, basis));
+    }
+    return costs;
+  }, [selected, basis]);
+
   const prevModel = useRef<string | null>(null);
   useEffect(() => {
     if (prevModel.current === model) return;
@@ -178,7 +199,7 @@ export function GeneratePage() {
   }, [selected?.avgOutputTokens]);
 
   const options = useMemo(
-    () => models.map((m) => ({ value: m.id, label: m.name })),
+    () => [...new Map(models.map((m) => [m.id, { value: m.id, label: m.name }])).values()],
     [models],
   );
 
@@ -243,10 +264,11 @@ export function GeneratePage() {
   }
 
   function buildPayload(): GenerateRequest | null {
-    if (!model || !prompt.trim()) return null;
+    const promptText = promptRef.current.trim();
+    if (!model || !promptText) return null;
     return {
       model,
-      prompt: prompt.trim(),
+      prompt: promptText,
       images,
       aspectRatio: aspectRatio ?? undefined,
       resolution: resolution ?? undefined,
@@ -390,7 +412,7 @@ export function GeneratePage() {
                       )}
                     </Group>
                     {selected.providers.map((provider) => {
-                      const providerCost = estimatePerImageCost(provider.pricing, basis);
+                      const providerCost = providerCosts?.get(provider.slug) ?? null;
                       const isCheapest = providerCost !== null && providerCost === cheapestPrice;
                       return (
                         <Stack key={provider.slug} gap={1}>
@@ -452,14 +474,7 @@ export function GeneratePage() {
                 </Card>
               )}
 
-              <Textarea
-                label="Prompt"
-                placeholder="A watercolour lighthouse at dusk…"
-                autosize
-                minRows={5}
-                value={prompt}
-                onChange={(event) => setPrompt(event.currentTarget.value)}
-              />
+              <PromptTextarea promptRef={promptRef} onPromptChange={handlePromptChange} />
 
               <Stack gap="xs">
                 <Text size="sm" fw={500}>

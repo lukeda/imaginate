@@ -157,8 +157,8 @@ export async function listFalImageModels(): Promise<ImageModel[]> {
   if (!process.env.FAL_API_KEY) return [];
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.models;
 
-  const models: ImageModel[] = [];
-  const pagesByCategory = await Promise.all(
+  const byId = new Map<string, ImageModel>();
+  await Promise.all(
     FAL_CATEGORIES.map(async (category) => {
       try {
         const first = await fetchJson<CatalogPage>(`${CATALOG_URL}?categories=${category}&page=1`);
@@ -170,16 +170,23 @@ export async function listFalImageModels(): Promise<ImageModel[]> {
             ),
           ),
         );
-        return [first, ...rest.filter((p): p is CatalogPage => p !== null)]
-          .flatMap((page) => page.items)
-          .map((item) => toModel(item, category));
+        for (const page of [first, ...rest.filter((p): p is CatalogPage => p !== null)]) {
+          for (const item of page.items) {
+            const existing = byId.get(item.id);
+            if (!existing) {
+              byId.set(item.id, toModel(item, category));
+            } else if (category === "image-to-image") {
+              existing.supportsImageInput = true;
+            }
+          }
+        }
       } catch {
-        return [];
+        /* Category fetch failures are non-fatal; keep the rest of the catalog. */
       }
     }),
   );
-  models.push(...pagesByCategory.flat());
 
+  const models = [...byId.values()];
   await enrichCapabilities(models);
 
   models.sort((a, b) => a.name.localeCompare(b.name));
