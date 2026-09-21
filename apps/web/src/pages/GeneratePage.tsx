@@ -23,6 +23,7 @@ import {
   Text,
   Textarea,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { useDebouncedCallback } from "@mantine/hooks";
 import type { OptionsFilter } from "@mantine/core";
@@ -94,6 +95,7 @@ export function GeneratePage() {
   const [background, setBackground] = useState<string | null>(null);
   const [count, setCount] = useState<number | string>(1);
   const [seed, setSeed] = useState<number | string>("");
+  const [streamPref, setStreamPref] = useState(true);
 
   const [providerMode, setProviderMode] = useState<string>("none");
   const [providerList, setProviderList] = useState<string[]>([]);
@@ -223,7 +225,8 @@ export function GeneratePage() {
     [selected],
   );
 
-  const streaming = selected?.supportsStreaming ?? false;
+  const supportsStreaming = selected?.supportsStreaming ?? false;
+  const streaming = supportsStreaming && streamPref && images.length === 0;
   const maxN = selected?.maxN ?? 1;
 
   function buildProvider(): ProviderRouting | undefined {
@@ -361,6 +364,18 @@ export function GeneratePage() {
               <Badge variant="light" color="indigo">
                 Streaming
               </Badge>
+            )}
+            {supportsStreaming ? (
+              <Switch
+                size="xs"
+                label="Streaming"
+                checked={streamPref}
+                onChange={(e) => setStreamPref(e.currentTarget.checked)}
+              />
+            ) : (
+              <Tooltip label="This model does not support streaming">
+                <Switch size="xs" label="Streaming" checked={false} disabled />
+              </Tooltip>
             )}
           </Group>
         )}
@@ -673,6 +688,12 @@ export function GeneratePage() {
               >
                 Generate{streaming ? " (streaming)" : ""}
               </Button>
+
+              {supportsStreaming && streamPref && images.length > 0 && (
+                <Text size="xs" c="dimmed">
+                  Streaming unavailable with reference images — generating without streaming.
+                </Text>
+              )}
 
               {loading && (
                 <Stack gap={4}>

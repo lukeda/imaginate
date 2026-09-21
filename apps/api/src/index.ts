@@ -205,7 +205,7 @@ app.post("/api/generate/stream", async (req, res) => {
     const model = models.find((m) => m.id === body.model);
     const supportsStreaming = model?.supportsStreaming ?? false;
 
-    if (!supportsStreaming) {
+    if (!supportsStreaming || images.length > 0) {
       const result = await runGeneration(body, abort.signal);
       const durationMs = Date.now() - startedAt;
       completeGeneration(id, { ...result, durationMs });

@@ -45,7 +45,7 @@ export function AppLayout() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Container size="xl" px={{ base: "xs", sm: "md" }} py="md">
+        <Container size="100%" px={{ base: "xs", sm: "md" }} py="md">
           <Outlet />
         </Container>
       </AppShell.Main>
